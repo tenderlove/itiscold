@@ -100,14 +100,14 @@ class Itiscold
 
   DeviceInfo = Struct.new :station_number,
     :model_number,
-    :record_interval,   # in seconds
+    :sample_interval,   # in seconds
     :upper_limit,
     :lower_limit,
     :last_online,
     :work_status,
     :start_time,
     :stop_button,
-    :record_count,
+    :sample_count,
     :current_time,
     :user_info,
     :number,
@@ -115,11 +115,14 @@ class Itiscold
     :tone_set,
     :alarm,
     :temp_unit,
-    :temp_calibration
+    :temp_calibration,
+    :new_station_number
 
   def device_info
-    @tty.write with_checksum([0xCC, 0x00, 0x06, 0x00]).pack('C5')
-    val = @tty.read 160
+    val = retry_comm(1) do
+      @tty.write with_checksum([0xCC, 0x00, 0x06, 0x00]).pack('C5')
+      @tty.read 160
+    end
     _,            # C set number
     station_no,   # C station number
     _,            # C
@@ -129,13 +132,13 @@ class Itiscold
     rec_int_m,    # C record interval min
     rec_int_s,    # C record interval sec
     upper_limit,  # n upper limit
-    lower_limit,  # n lower limit
+    lower_limit,  # s> lower limit
     last_online,  # A7 (datetime)
     ws,           # C work status
     start_time,   # A7 (datetime)
     sb,           # C stop button
     _,            # C
-    record_count, # n number of records
+    sample_count, # n number of records
     current_time, # A7 (datetime)
     user_info,    # A100
     number,       # A10
@@ -146,15 +149,111 @@ class Itiscold
     temp_calib,   # C temp calibration
     _,            # A6 padding
     check,        # C padding
-    = val.unpack('C8n2A7CA7CCnA7A100A10C5A6C')
+    = val.unpack('C8ns>A7CA7CCnA7A100A10C5A6C')
     check_checksum check, checksum(val.bytes.first(val.bytesize - 1))
     DeviceInfo.new station_no, model_no,
       (rec_int_h * 3600 + rec_int_m * 60 + rec_int_s),
       upper_limit / 10.0, lower_limit / 10.0, unpack_datetime(last_online),
-      work_status(ws), unpack_datetime(start_time), allowed?(sb),
-      record_count, unpack_datetime(current_time), user_info, number,
-      delay_time(delaytime), allowed?(tone_set), alrm, temp_unit(tmp_unit),
+      work_status(ws), unpack_datetime(start_time), allowed_decode(sb),
+      sample_count, unpack_datetime(current_time), user_info, number,
+      delay_time_decode(delaytime), allowed_decode(tone_set), alrm, temp_unit_decode(tmp_unit),
       temp_calib / 10.0
+  end
+
+  def device_params= values
+    data = [
+      0x33, # C
+      values.station_number, # C
+      0x05, 0x00,            # CC
+    ] + split_time(values.sample_interval) + # CCC
+    [
+      (values.upper_limit * 10).to_i, # n
+      (values.lower_limit * 10).to_i, # s>
+      values.new_station_number || values.station_number, # C
+      allowed_encode(values.stop_button), # C
+      delay_time_encode(values.delay_time), # C
+      allowed_encode(values.tone_set), # C
+      values.alarm, # C
+      temp_unit_encode(values.temp_unit), # C
+      (values.temp_calibration * 10).to_i, # C
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00 # C6
+    ]
+    retry_comm(1) do
+      @tty.write with_checksum(data).pack('CCCCCCCns>CCCCCCCC6C')
+      @tty.read 3
+    end
+  end
+
+  def set_device_number station_number, dev_number
+    str = dev_number.bytes.first(10)
+    str.concat([0x00] * (10 - str.length))
+    data = [ 0x33, station_number, 0x0b, 0x00 ] + str
+
+    retry_comm(1) do
+      @tty.write with_checksum(data).pack("C#{data.length + 1}")
+      @tty.read 3
+    end
+  end
+
+  def set_user_info station_number, info
+    str = info.bytes.first(100)
+    str.concat([0x00] * (100 - str.length))
+    data = [ 0x33, station_number, 0x09, 0x00 ] + str
+
+    retry_comm(1) do
+      @tty.write with_checksum(data).pack("C#{data.length + 1}")
+      @tty.read 3
+    end
+  end
+
+  def set_device_time station_number, time
+    data = [0x33, station_number, 0x07, 0x00] + encode_datetime(time)
+
+    retry_comm(1) do
+      @tty.write with_checksum(data).pack("C4nC6")
+      @tty.read 3
+    end
+  end
+
+  DataHeader = Struct.new :sample_count, :start_time
+
+  def data_header station
+    buf = retry_comm(1) do
+      @tty.write with_checksum([0x33, station, 0x1, 0x0]).pack('C5')
+      @tty.read 11
+    end
+    _, sample_count, start_time, check = buf.unpack 'CnA7C'
+
+    check_checksum check, checksum(buf.bytes.first(buf.bytesize - 1))
+
+    DataHeader.new sample_count, unpack_datetime(start_time)
+  end
+
+  def data_body station, page
+    buf = retry_comm(1) do
+      @tty.write with_checksum([0x33, station, 0x2, page]).pack('C5')
+      @tty.read
+    end
+    temps = buf.unpack("Cn#{(buf.bytesize - 2) / 2}C")
+    temps.shift # header
+    temps.pop   # checksum
+    temps.map { |t| t / 10.0 }
+  end
+
+  def samples
+    info    = device_info
+    header  = data_header info.station_number
+    records = header.sample_count
+    page    = 0
+    list    = []
+    while records > 0
+      samples = data_body info.station_number, page
+      records -= samples.length
+      list    += samples
+      page    += 1
+    end
+    st = header.start_time
+    list.map.with_index { |v, i| [st + (i * info.sample_interval), v] }
   end
 
   def flush
@@ -163,7 +262,26 @@ class Itiscold
 
   private
 
-  def temp_unit u
+  def split_time time_s
+    h = time_s / 3600
+    time_s -= (h * 3600)
+    m = time_s / 60
+    time_s -= (m * 60)
+    [h, m, time_s]
+  end
+
+  def retry_comm times
+    x = nil
+    loop do
+      x = yield
+      break if x || times == 0
+      flush
+      times -= 1
+    end
+    x
+  end
+
+  def temp_unit_decode u
     case u
     when 0x13 then 'F'
     when 0x31 then 'C'
@@ -172,7 +290,16 @@ class Itiscold
     end
   end
 
-  def delay_time dt
+  def temp_unit_encode u
+    case u
+    when 'F' then 0x13
+    when 'C' then 0x31
+    else
+      raise u.to_s
+    end
+  end
+
+  def delay_time_decode dt
     case dt
     when 0x00 then 0
     when 0x01 then 30 * 60  # 30min in sec
@@ -183,10 +310,30 @@ class Itiscold
     end
   end
 
-  def allowed? sb
+  def delay_time_encode dt
+    case dt
+    when 0        then 0x00
+    when 30 * 60  then 0x01 # 30min in sec
+    when 60 * 60  then 0x10 # 60min in sec
+    when 90 * 60  then 0x11 # 90min in sec
+    when 120 * 60 then 0x20 # 120min in sec
+    when 150 * 60 then 0x21 # 150min in sec
+    end
+  end
+
+  def allowed_decode sb
     case sb
     when 0x13 then :permit
     when 0x31 then :prohibit
+    else
+      raise sb.to_s
+    end
+  end
+
+  def allowed_encode sb
+    case sb
+    when :permit then 0x13
+    when :prohibit then 0x31
     else
       raise sb.to_s
     end
@@ -209,6 +356,10 @@ class Itiscold
     Time.new(*bytes.unpack('nC5'))
   end
 
+  def encode_datetime time
+    [time.year, time.month, time.day, time.hour, time.min, time.sec]
+  end
+
   def with_checksum list
     list + [checksum(list)]
   end
@@ -219,5 +370,9 @@ class Itiscold
 end
 
 require 'psych'
-temp = Itiscold.open '/dev/tty.wchusbserial1420'
-puts Psych.dump temp.device_info
+temp = Itiscold.open '/dev/tty.wchusbserial14140'
+info = temp.device_info
+puts Psych.dump info
+temp.set_device_time info.station_number, Time.now
+info = temp.device_info
+puts Psych.dump info
