@@ -195,7 +195,7 @@ class Itiscold
     end
   end
 
-  def set_user_info station_number, info
+  def set_user_info info, station_number = device_info.station_number
     str = info.bytes.first(100)
     str.concat([0x00] * (100 - str.length))
     data = [ 0x33, station_number, 0x09, 0x00 ] + str
@@ -206,7 +206,7 @@ class Itiscold
     end
   end
 
-  def set_device_time station_number, time
+  def set_device_time! time = Time.now, station_number = device_info.station_number
     data = [0x33, station_number, 0x07, 0x00] + encode_datetime(time)
 
     retry_comm(1) do
@@ -368,11 +368,3 @@ class Itiscold
     list.inject(:+) % 256
   end
 end
-
-require 'psych'
-temp = Itiscold.open '/dev/tty.wchusbserial14140'
-info = temp.device_info
-puts Psych.dump info
-temp.set_device_time info.station_number, Time.now
-info = temp.device_info
-puts Psych.dump info
