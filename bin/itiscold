@@ -1,0 +1,59 @@
+require 'itiscold'
+require 'optparse'
+require 'time'
+
+options = {
+  tty:        ARGV.shift,
+  command:    ARGV.shift,
+  table_name: 'samples'
+}
+
+def quit op
+  puts op
+  exit
+end
+
+op = OptionParser.new do |opts|
+  opts.banner = "Usage: itiscold path_to_tty [samples|info|server] [options]"
+
+  opts.on '--csv', 'output samples as CSV' do
+    quit(opts)  if options[:format]
+    options[:format] = :csv
+  end
+
+  opts.on '--json', 'output samples as JSON' do
+    quit(opts)  if options[:format]
+    options[:format] = :json
+  end
+end
+
+op.parse!
+
+quit(op) unless options[:command] && options[:tty]
+
+case options[:command]
+when 'samples'
+  temp = Itiscold.open options[:tty]
+  case options[:format]
+  when :csv
+    require 'csv'
+    data = temp.samples
+    CSV { |csv| csv << ['SampleTime', 'Temp']; data.each { |s| csv << s } }
+  when :json
+    require 'json'
+    puts JSON.dump temp.device_info.to_h
+    temp.samples.each { |s|
+      puts JSON.dump({ time: s.first.iso8601, temp: s.last })
+    }
+  end
+when 'info'
+  require 'psych'
+  puts Psych.dump temp.device_info
+when 'server'
+  Itiscold::WebServer.start options[:tty]
+else
+  puts op
+  exit
+end
+
+# vim: syntax=ruby

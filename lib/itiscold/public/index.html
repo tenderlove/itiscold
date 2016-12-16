@@ -1,0 +1,71 @@
+<html>
+  <head>
+    <link href='https://cdnjs.cloudflare.com/ajax/libs/metrics-graphics/2.11.0/metricsgraphics.css' rel='stylesheet' type='text/css'>
+    <link href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css' rel='stylesheet' type='text/css'>
+
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/jquery/3.1.0/jquery.min.js'></script>
+    <script src='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js'></script>
+    <script src="https://d3js.org/d3.v4.min.js"></script>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/metrics-graphics/2.11.0/metricsgraphics.js'></script>
+  <script>
+    var info;
+    var samples;
+    function capitalizeFirstLetter(string) {
+      return string.charAt(0).toUpperCase() + string.slice(1);
+    }
+    $.when($.getJSON("/info", function(data) {
+        info = data;
+      }), $.getJSON("/samples", function(data) {
+        console.log("hello");
+        samples = data.map(function(sample) {
+          return { time: new Date(sample.time), temp: sample.temp };
+        });
+      })
+    ).then(function() {
+      console.log(samples);
+      console.log(info);
+      $(function() {
+        var table = $("#device-info > tbody");
+        for (var key in info) {
+          if (info.hasOwnProperty(key)) {
+            var value = info[key];
+            if (value) {
+              var words = key.split("_");
+              key = words.map(capitalizeFirstLetter).join(" ");
+              table.append("<tr><td>" + key + "</td><td>" + value + "</td></tr>");
+            }
+          }
+        }
+        MG.data_graphic({
+          title: "Temperature",
+          description: "This graph shose a time series of temperatures",
+          data: samples,
+          width: 600,
+          height: 250,
+          target: '#temp-graph',
+          x_accessor: 'time',
+          y_accessor: 'temp',
+        })
+      });
+    });
+  </script>
+  </head>
+  <body>
+    <div class="container">
+      <h1 class="text-center">Temperature Graph</h1>
+
+      <div class="row">
+        <div class="col-xs-4">
+          <h2>Device Info</h2>
+          <table id="device-info" class="table table-striped table-condensed table-bordered">
+            <tbody>
+            </tbody>
+          </table>
+        </div>
+        <div class="col-xs-8 text-center">
+          <div id='temp-graph'></div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

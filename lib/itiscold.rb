@@ -1,5 +1,7 @@
 require 'termios'
 require 'fcntl'
+require 'webrick'
+require 'json'
 
 class Itiscold
   VERSION = '1.0.0'
@@ -366,5 +368,49 @@ class Itiscold
 
   def checksum list
     list.inject(:+) % 256
+  end
+
+  module WebServer
+    class TTYServlet < WEBrick::HTTPServlet::AbstractServlet
+      def initialize server, tty, mutex
+        super server
+        @tty   = tty
+        @mutex = mutex
+      end
+    end
+
+    class InfoServlet < TTYServlet
+      def do_GET request, response
+        response.status = 200
+        response['Content-Type'] = 'text/json'
+        @mutex.synchronize do
+          json = JSON.dump(@tty.device_info.to_h)
+          response.body = json
+        end
+      end
+    end
+
+    class SampleServlet < TTYServlet
+      def do_GET request, response
+        response.status = 200
+        response['Content-Type'] = 'text/json'
+        @mutex.synchronize do
+          response.body = JSON.dump @tty.samples.map { |s|
+            { time: s.first.iso8601, temp: s.last }
+          }
+        end
+      end
+    end
+
+    def self.start tty
+      root = File.expand_path(File.join File.dirname(__FILE__), 'itiscold', 'public')
+      mutex  = Mutex.new
+      temp = Itiscold.open tty
+      server = WEBrick::HTTPServer.new(:Port => 8000, :DocumentRoot => root)
+      server.mount "/samples", SampleServlet, temp, mutex
+      server.mount "/info", InfoServlet, temp, mutex
+      trap "INT" do server.shutdown end
+      server.start
+    end
   end
 end
