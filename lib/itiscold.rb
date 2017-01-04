@@ -73,12 +73,16 @@ class Itiscold
 
   def self.open filename, speed = 115200
     f = File.open filename, File::RDWR|Fcntl::O_NOCTTY|Fcntl::O_NDELAY
+    f.binmode
     f.sync = true
 
     # enable blocking reads, otherwise read timeout won't work
     f.fcntl Fcntl::F_SETFL, f.fcntl(Fcntl::F_GETFL, 0) & ~Fcntl::O_NONBLOCK
 
     t = Termios.tcgetattr f
+    t.iflag = 0
+    t.oflag = 0
+    t.lflag = 0
     t = TTY.data_bits    t, 8
     t = TTY.stop_bits    t, 1
     t = TTY.parity       t, :none
