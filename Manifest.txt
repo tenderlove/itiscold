@@ -1,7 +1,9 @@
-History.txt
+CHANGELOG.md
+LICENSE.md
 Manifest.txt
-README.txt
+README.md
 Rakefile
 bin/itiscold
 lib/itiscold.rb
+lib/itiscold/public/index.html
 test/test_itiscold.rb
