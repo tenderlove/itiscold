@@ -4,7 +4,7 @@ require 'webrick'
 require 'json'
 
 class Itiscold
-  VERSION = '1.0.0'
+  VERSION = '1.0.1'
 
   class TTY
     include Termios
