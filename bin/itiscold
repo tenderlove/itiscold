@@ -48,6 +48,7 @@ when 'samples'
   end
 when 'info'
   require 'psych'
+  temp = Itiscold.open options[:tty]
   puts Psych.dump temp.device_info
 when 'server'
   Itiscold::WebServer.start options[:tty]
