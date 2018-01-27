@@ -2,96 +2,13 @@ require 'termios'
 require 'fcntl'
 require 'webrick'
 require 'json'
+require 'uart'
 
 class Itiscold
   VERSION = '1.0.1'
 
-  class TTY
-    include Termios
-
-    def self.open filename, speed, mode
-      if mode =~ /^(\d)(\w)(\d)$/
-        t.data_bits = $1.to_i
-        t.stop_bits = $3.to_i
-        t.parity = { 'N' => :none, 'E' => :even, 'O' => :odd }[$2]
-        t.speed = speed
-        t.read_timeout = 5
-        t.reading = true
-        t.update!
-      end
-    end
-
-    def self.data_bits t, val
-      t.cflag &= ~CSIZE               # clear previous values
-      t.cflag |= const_get("CS#{val}") # Set the data bits
-      t
-    end
-
-    def self.stop_bits t, val
-      case val
-      when 1 then t.cflag &= ~CSTOPB
-      when 2 then t.cflag |= CSTOPB
-      else
-        raise
-      end
-      t
-    end
-
-    def self.parity t, val
-      case val
-      when :none
-        t.cflag &= ~PARENB
-      when :even
-        t.cflag |= PARENB  # Enable parity
-        t.cflag &= ~PARODD # Make it not odd
-      when :odd
-        t.cflag |= PARENB  # Enable parity
-        t.cflag |= PARODD  # Make it odd
-      else
-        raise
-      end
-      t
-    end
-
-    def self.speed t, speed
-      t.ispeed = const_get("B#{speed}")
-      t.ospeed = const_get("B#{speed}")
-      t
-    end
-
-    def self.read_timeout t, val
-      t.cc[VTIME] = val
-      t.cc[VMIN] = 0
-      t
-    end
-
-    def self.reading t
-      t.cflag |= CLOCAL | CREAD
-      t
-    end
-  end
-
   def self.open filename, speed = 115200
-    f = File.open filename, File::RDWR|Fcntl::O_NOCTTY|Fcntl::O_NDELAY
-    f.binmode
-    f.sync = true
-
-    # enable blocking reads, otherwise read timeout won't work
-    f.fcntl Fcntl::F_SETFL, f.fcntl(Fcntl::F_GETFL, 0) & ~Fcntl::O_NONBLOCK
-
-    t = Termios.tcgetattr f
-    t.iflag = 0
-    t.oflag = 0
-    t.lflag = 0
-    t = TTY.data_bits    t, 8
-    t = TTY.stop_bits    t, 1
-    t = TTY.parity       t, :none
-    t = TTY.speed        t, speed
-    t = TTY.read_timeout t, 5
-    t = TTY.reading      t
-
-    Termios.tcsetattr f, Termios::TCSANOW, t
-    Termios.tcflush f, Termios::TCIOFLUSH
+    f = UART.open filename, speed
 
     temp = new f
 
