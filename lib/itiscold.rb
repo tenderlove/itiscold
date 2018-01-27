@@ -275,7 +275,10 @@ class Itiscold
     raise "invalid checksum #{expected} == #{actual}" unless expected == actual
   end
 
+  NULL_DATE = [65535, 255, 255, 255, 255, 255].pack('nC5')
+
   def unpack_datetime bytes
+    return if bytes == NULL_DATE
     Time.new(*bytes.unpack('nC5'))
   end
 
