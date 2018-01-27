@@ -190,6 +190,10 @@ class Itiscold
     end
   end
 
+  def clear_data!
+    self.device_params = device_info
+  end
+
   def set_device_number station_number, dev_number
     str = dev_number.bytes.first(10)
     str.concat([0x00] * (10 - str.length))
