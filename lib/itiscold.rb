@@ -3,6 +3,7 @@ require 'fcntl'
 require 'webrick'
 require 'json'
 require 'uart'
+require 'io/wait'
 
 class Itiscold
   VERSION = '1.0.1'
@@ -13,7 +14,6 @@ class Itiscold
     temp = new f
 
     # Try reading the version a few times before giving up
-    temp.flush
     temp
   end
 
@@ -42,10 +42,21 @@ class Itiscold
     :new_station_number
 
   def device_info
-    val = retry_comm(1) do
-      @tty.write with_checksum([0xCC, 0x00, 0x06, 0x00]).pack('C5')
-      @tty.read 160
+    val = nil
+
+    loop do
+      if @tty.wait_writable
+        @tty.write with_checksum([0xCC, 0x00, 0x06, 0x00]).pack('C5')
+      else
+        raise "Couldn't open tty for writing"
+      end
+
+      if @tty.wait_readable(2)
+        val = @tty.read 160
+        break
+      end
     end
+
     _,            # C set number
     station_no,   # C station number
     _,            # C
@@ -83,6 +94,10 @@ class Itiscold
       temp_calib / 10.0
   end
 
+  def close
+    @tty.close
+  end
+
   def device_params= values
     data = [
       0x33, # C
@@ -101,9 +116,18 @@ class Itiscold
       (values.temp_calibration * 10).to_i, # C
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00 # C6
     ]
-    retry_comm(1) do
-      @tty.write with_checksum(data).pack('CCCCCCCns>CCCCCCCC6C')
-      @tty.read 3
+
+    loop do
+      if @tty.wait_writable
+        @tty.write with_checksum(data).pack('CCCCCCCns>CCCCCCCC6C')
+      else
+        raise "Couldn't open tty for writing"
+      end
+
+      if @tty.wait_readable(2)
+        @tty.read 3
+        break
+      end
     end
   end
 
