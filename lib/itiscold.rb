@@ -105,8 +105,8 @@ class Itiscold
       0x05, 0x00,            # CC
     ] + split_time(values.sample_interval) + # CCC
     [
-      (values.upper_limit * 10).to_i, # n
-      (values.lower_limit * 10).to_i, # s>
+      (values.upper_limit * 10).to_i & 0xFF, # n
+      (values.lower_limit * 10).to_i & 0xFF, # s>
       values.new_station_number || values.station_number, # C
       allowed_encode(values.stop_button), # C
       delay_time_encode(values.delay_time), # C
