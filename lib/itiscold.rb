@@ -6,7 +6,7 @@ require 'uart'
 require 'io/wait'
 
 class Itiscold
-  VERSION = '1.0.1'
+  VERSION = '1.0.2'
 
   def self.open filename, speed = 115200
     f = UART.open filename, speed

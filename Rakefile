@@ -13,7 +13,7 @@ Hoe.spec 'itiscold' do
   self.readme_file   = 'README.md'
   self.history_file  = 'CHANGELOG.md'
   self.extra_rdoc_files  = FileList['*.md']
-  self.extra_deps << ['ruby-termios',             '~> 1']
+  self.extra_deps << ['uart',             '~> 1']
 end
 
 # vim: syntax=ruby
